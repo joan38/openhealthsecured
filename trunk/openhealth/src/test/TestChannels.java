@@ -30,6 +30,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 
 import es.libresoft.openhealth.Agent;
+import es.libresoft.openhealth.chap.ManagerAuthenticator;
 
 public class TestChannels {
 	public static void main(String[] args) {
@@ -40,7 +41,7 @@ public class TestChannels {
 				Socket s = ss.accept();
 				Channel chnl = new Channel (s.getInputStream(),s.getOutputStream());
 				VirtualChannel vch = new VirtualChannel(chnl);
-				Agent a = new Agent();
+				Agent a = new Agent(new ManagerAuthenticator());
 				a.setVirtualChannel(vch);
 			}
 		}catch (Exception e){

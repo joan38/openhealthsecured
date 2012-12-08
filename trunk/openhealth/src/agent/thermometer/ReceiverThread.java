@@ -1,5 +1,7 @@
 package agent.thermometer;
 
+import es.libresoft.openhealth.chap.AgentAuthenticator;
+import es.libresoft.openhealth.utils.ASN1_Values;
 import ieee_11073.part_10101.Nomenclature;
 import ieee_11073.part_20601.asn1.AVA_Type;
 import ieee_11073.part_20601.asn1.AareApdu;
@@ -14,6 +16,7 @@ import ieee_11073.part_20601.asn1.ConfigObjectList;
 import ieee_11073.part_20601.asn1.ConfigReport;
 import ieee_11073.part_20601.asn1.ConfigReportRsp;
 import ieee_11073.part_20601.asn1.DataApdu;
+import ieee_11073.part_20601.asn1.DataApdu.MessageChoiceType;
 import ieee_11073.part_20601.asn1.DataProto;
 import ieee_11073.part_20601.asn1.DataProtoId;
 import ieee_11073.part_20601.asn1.DataProtoList;
@@ -39,14 +42,11 @@ import ieee_11073.part_20601.asn1.RlreApdu;
 import ieee_11073.part_20601.asn1.RlrqApdu;
 import ieee_11073.part_20601.asn1.ScanReportInfoFixed;
 import ieee_11073.part_20601.asn1.SystemType;
-import ieee_11073.part_20601.asn1.DataApdu.MessageChoiceType;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.Socket;
-
 import org.bn.CoderFactory;
 import org.bn.IDecoder;
 import org.bn.IEncoder;
@@ -56,14 +56,19 @@ public class ReceiverThread {
 
     private static Socket socket;
     public final static String ENCODING_RULE = "MDER";
+    private final AgentAuthenticator authenticator;
+    private int type;
+    private int[] esid;
 
-    public ReceiverThread() {
+    public ReceiverThread(AgentAuthenticator authenticator) {
+        this.authenticator = authenticator;
     }
 
     private boolean checkSocketState() {
         if (socket.isConnected() && !socket.isClosed()) {
             return true;
         }
+
         try {
             socket.close();
         } catch (IOException e) {
@@ -71,8 +76,10 @@ public class ReceiverThread {
             e.printStackTrace();
             System.exit(0);
         }
+
         System.out.println("Disconnected");
         System.exit(0);
+
         return false;
     }
 
@@ -82,27 +89,20 @@ public class ReceiverThread {
             if (apdu.isAareSelected()) {
                 System.out.println("isAare");
                 evalueAssociationResponse(apdu);
-
             } else if (apdu.isPrstSelected()) {
                 System.out.println("isPrst");
                 evaluePresentationResponse(apdu);
-
             } else if (apdu.isRlreSelected()) {
                 evalueAssociationReleaseResponse(apdu);
-
             } else if (apdu.isAbrtSelected()) {
                 evalueAbortReason(apdu);
-
             } else if (apdu.isRlrqSelected()) {
                 evalueAssociationReleaseRequest(apdu);
-
             } else if (apdu.isAarqSelected()) {
                 evalueAssociationRequest();
-
             } else {
                 System.out.println("Something not good!");
             }
-
         } catch (Exception e) {
             System.out.println("Error: evalueResponse");
             e.printStackTrace();
@@ -111,44 +111,37 @@ public class ReceiverThread {
     }
 
     public void evalueAssociationResponse(ApduType apdu) {
-
         try {
-
             System.out.println("Initializing ...");
+
             AareApdu aare = apdu.getAare();
             System.out.println("AssociateResult: " + aare.getResult().getValue());
+
             int associateresult = aare.getResult().getValue();
             DataProto dataproto = aare.getSelected_data_proto();
             System.out.println("DataProtoID: " + dataproto.getData_proto_id().getValue());
 
-
             if (associateresult == 0) {
                 associateResultAccepted();
-
             } else if (associateresult == 1) {
                 associateResultRejectedPermanent();
-
             } else if (associateresult == 2) {
                 associateResultRejectedTransient();
-
             } else if (associateresult == 3) {
                 associationResultAcceptedUnknownConfig(dataproto);
-
             } else if (associateresult == 4) {
                 associateResultRejectedNoCommonProtocol(dataproto);
-
             } else if (associateresult == 5) {
                 associateResultRejectedNoCommonParameter(dataproto);
-
             } else if (associateresult == 6) {
                 associateResultRejectedUnknown();
-
             } else if (associateresult == 7) {
                 associateResultRejectedUnauthorized();
-
             } else if (associateresult == 8) {
                 associateResultUnsupportedAssociationVersion(dataproto);
-
+            } else if (associateresult == 9) {
+                System.out.println("Authentication required");
+                associateResultAuthenticationRequired(dataproto);
             } else {
                 System.out.println("Unknown Message");
             }
@@ -158,10 +151,150 @@ public class ReceiverThread {
         }
     }
 
-    public void evalueAbortReason(ApduType apdu) {
-
+    private void associateResultAuthenticationRequired(DataProto dataproto) {
         try {
+            byte[] challenge = dataproto.getData_proto_info();
+            byte[] challengeResponse = authenticator.resolveTheChallenge(challenge);
 
+            /* TEST ApduType choice */
+            /* Make ApduType */
+            ApduType at = new ApduType();
+
+            /* Make ApduType -> AarqApdu */
+            AarqApdu aarq = new AarqApdu();
+
+            /* Make ApduType -> AarqApdu -> AssociationVersion */
+            AssociationVersion av = new AssociationVersion();
+
+            /* Make ApduType -> AarqApdu -> AssociationVersion -> Bits-32 1(0)*/
+            byte[] ascVr = {(byte) 128, (byte) 0, (byte) 0, (byte) 0};
+
+            /* Set Value AssociationVersion */
+            BitString bt = new BitString(ascVr);
+            av.setValue(bt);
+
+            /* Make ApduType -> AarqApdu -> DataProtoList */
+            DataProtoList dpl = new DataProtoList();
+
+            /* Initialize  DataProtoList */
+            dpl.initValue();
+
+            /* Make ApduType -> AarqApdu -> DataProtoList -> DataProto */
+            DataProto dp = new DataProto();
+
+            /* Make ApduType -> AarqApdu -> DataProtoList -> DataProto -> DataProtoId */
+            DataProtoId dpi = new DataProtoId(ASN1_Values.DATA_PROTO_ID_20601);
+
+            /*BEGIN to encode PhdAssociationInformation in ANY form through ByteArrayOutputStream to get bytes array*/
+
+            /* Make PhdAssociationInformation */
+            PhdAssociationInformation pai = new PhdAssociationInformation();
+
+            /* Make PhdAssociationInformation -> ProtocolVersion */
+            ProtocolVersion pv = new ProtocolVersion();
+
+            /* Make PhdAssociationInformation -> ProtocolVersion --> Bits-32 1(0) */
+            byte[] proVr = {(byte) 128, (byte) 0, (byte) 0, (byte) 0};
+
+            /* Set Value PhdAssociationInformation -> ProtocolVersion */
+            BitString pbt = new BitString(proVr);
+            pv.setValue(pbt);
+
+            /* Make 16 BITS  MDER 0(0) [128], XER 1(0) [192], PER 2(0) [224](32)*/
+            byte[] encR = {(byte) 128, (byte) 0};
+
+            /* Make & Set, PhdAssociationInformation -> EncodingRules -> Bits-16 1(0) */
+            EncodingRules er = new EncodingRules(new BitString(encR));
+
+            /* Make & Set PhdAssociationInformation -> NomenclatureVersion -> Bits-32 1(0) */
+            byte[] noVr = {(byte) 128, (byte) 0, (byte) 0, (byte) 0};
+
+            /* Make & Set PhdAssociationInformation -> NomenclatureVersion*/
+            BitString nbt = new BitString(noVr);
+            NomenclatureVersion nv = new NomenclatureVersion(new BitString(noVr));
+
+            /* Make PhdAssociationInformation -> FunctionalUnits -> Bits-32 0(0) */
+            byte[] byteArray2 = {(byte) 0, (byte) 0, (byte) 0, (byte) 0};
+            FunctionalUnits fn = new FunctionalUnits(new BitString(byteArray2));
+
+            /* Make PhdAssociationInformation -> SystemType -> Bits-32 8(0)*/
+            byte[] syst = {(byte) 0, (byte) 128, (byte) 0, (byte) 0};
+            SystemType st = new SystemType(new BitString(syst));
+
+            byte[] sysId = {(byte) 76, (byte) 73, (byte) 66, (byte) 82, (byte) 69, (byte) 95, (byte) 65, (byte) 71, (byte) 69, (byte) 78, (byte) 84, (byte) 95, (byte) esid[0], (byte) esid[1], (byte) esid[2]};
+
+            /* Make PhdAssociationInformation -> ConfigId  Thermometer Range Value Std[800] Ext[16386,32767]*/
+            ConfigId cid = new ConfigId(type);
+
+            /* Make PhdAssociationInformation -> DataReqModeCapab */
+            DataReqModeCapab drmc = new DataReqModeCapab();
+
+            /* Make PhdAssociationInformation -> DataReqModeCapab -> DataReqModeFlags */
+            DataReqModeFlags drmf = new DataReqModeFlags();
+
+            /* Set PhdAssociationInformation -> DataReqModeCapab -> DataReqModeFlags (0) "single response" */
+            byte[] drmfb = {(byte) 128, (byte) 0};
+            drmf.setValue(new BitString(drmfb));
+
+            /* Set PhdAssociationInformation -> DataReqModeCapab */
+            drmc.setData_req_mode_flags(drmf);
+            drmc.setData_req_init_agent_count(1);
+            drmc.setData_req_init_manager_count(0);
+
+            /* Make PhAssociationInformation -> AttributeList */
+            AttributeList al = new AttributeList();
+
+            /* Set PhdAssociationInformation -> AttributeList */
+            al.initValue();
+
+            /* Set PhdAssociationInformation  */
+            pai.setProtocol_version(pv);
+            pai.setEncoding_rules(er);
+            pai.setNomenclature_version(nv);
+            pai.setFunctional_units(fn);
+            pai.setSystem_type(st);
+            pai.setSystem_id(sysId);
+            pai.setDev_config_id(cid);
+            pai.setData_req_mode_capab(drmc);
+            pai.setOption_list(al);
+            /* End Set PhdAssociationInformation */
+
+            /* Encode PhdAssociationInformation */
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            IEncoder<PhdAssociationInformation> encoderPHD = CoderFactory.getInstance().newEncoder(ENCODING_RULE);
+            encoderPHD.encode(pai, out);
+            /*End encode PhdAssociationInformation*/
+
+            /* Transform Bytes to Array*/
+            /* Set DataProto ApduType -> AarqApdu -> DataProtoList -> DataProto */
+            dp.setData_proto_id(dpi);
+            /* Set ApduType -> AarqApdu -> DataProtoList -> DataProto -> DataProtoId */
+            /* Transform Encode PhdAssociationInformation to Bytes Array*/
+            dp.setData_proto_info(out.toByteArray()); //Get bytes for PhdAssociationInformation
+			/* Add DataProto to ApduType -> AarqApdu -> DataProtoList */
+            dpl.add(dp);
+            
+            DataProto dpChallenge = new DataProto();
+            dpChallenge.setData_proto_id(new DataProtoId(ASN1_Values.DATA_PROTO_ID_EXTERNAL));
+            dpChallenge.setData_proto_info(challengeResponse);
+            dpl.add(dpChallenge);
+            
+            /* Add AssociationVersion to ApduType -> AarqApdu -> AssociationVersion*/
+            aarq.setAssoc_version(av);
+            /* Add DataProtoList to ApduType -> AarqApdu ->DataProtoList */
+            aarq.setData_proto_list(dpl);
+            /* Add ArqApdu to ApduType -> AarqApdu */
+            at.selectAarq(aarq);
+
+            SenderThread.sendApdu(at);
+        } catch (Exception e) {
+            System.out.println("Error: createAssociationRequest");
+            e.printStackTrace();
+        }
+    }
+
+    public void evalueAbortReason(ApduType apdu) {
+        try {
             System.out.println("Initializing ...");
             AbrtApdu abrt = apdu.getAbrt();
             System.out.println("AbortReason: " + abrt.getReason().getValue());
@@ -186,11 +319,10 @@ public class ReceiverThread {
     }
 
     public void evalueAssociationReleaseResponse(ApduType apdu) {
-
         try {
-
             System.out.println("Is Rlre ...");
             RlreApdu rlre = apdu.getRlre();
+
             int reason = rlre.getReason().getValue();
             System.out.println("AssociationReleaseResponseReason: " + reason);
 
@@ -207,11 +339,10 @@ public class ReceiverThread {
     }
 
     public void evalueAssociationReleaseRequest(ApduType apdu) {
-
         try {
-
             System.out.println("Is Rlrq ...");
             RlrqApdu rlrq = apdu.getRlrq();
+
             int reason = rlrq.getReason().getValue();
             System.out.println("AssociationReleaseRequestReason: " + reason);
 
@@ -240,16 +371,13 @@ public class ReceiverThread {
             System.out.println("Error: evalueAssociationReleaseRequest");
             e.printStackTrace();
         }
-
     }
 
     public void evalueAssociationRequest() {
         System.out.println("Is Aarq ...");
-
     }
 
     public void evaluePresentationResponse(ApduType apdu) {
-
         try {
             IDecoder decoder = CoderFactory.getInstance().newDecoder(ENCODING_RULE);
 
@@ -267,27 +395,19 @@ public class ReceiverThread {
 
                 if (dar.getMessage().getRors_cmip_confirmed_event_report().getEvent_type().getValue().getValue() == Nomenclature.MDC_NOTI_CONFIG) {
                     getConfigReportRsp(dar.getMessage().getRors_cmip_confirmed_event_report().getEvent_reply_info());
-
                 } else {
                     acceptedConfig();
                 }
-
             } else if (dar.getMessage().isRors_cmip_confirmed_actionSelected()) {
                 System.out.println("Action Result Simple");
-
             } else if (dar.getMessage().isRors_cmip_confirmed_setSelected()) {
                 System.out.println("Set Result Simple");
-
             } else if (dar.getMessage().isRors_cmip_getSelected()) {
                 System.out.println("Get Result Simple");
-
             } else if (dar.getMessage().isRoerSelected()) {
-
                 Thermometer.getErrorResult(dar.getMessage().getRoer().getError_value().getValue());
-
             } else if (dar.getMessage().isRorjSelected()) {
                 System.out.println("Reject Result");
-
             } else {
                 System.out.println("Problem!");
             }
@@ -298,9 +418,7 @@ public class ReceiverThread {
     }
 
     public void getConfigReportRsp(byte[] configrsp) {
-
         try {
-
             IDecoder decoderCR = CoderFactory.getInstance().newDecoder(ENCODING_RULE);
 
             ByteArrayInputStream input3 = new ByteArrayInputStream(configrsp);
@@ -315,18 +433,14 @@ public class ReceiverThread {
             } else {
                 System.out.println("Unknown!");
             }
-
         } catch (Exception e) {
             System.out.println("Error: getConfigReportRsp");
             e.printStackTrace();
         }
-
     }
 
     public void acceptedConfig() {
-
         try {
-
             System.out.println("Accepted Config");
             /* Make AdpuType */
             ApduType at3 = new ApduType();
@@ -387,6 +501,7 @@ public class ReceiverThread {
             java.util.Collection<ObservationScanFixed> osfc = new java.util.LinkedList<ObservationScanFixed>();
             ObservationScanFixed osf1 = new ObservationScanFixed();
 
+            /* Set DataApdu -> Add the temperature */
             osfc.add(Thermometer.createObservationScanFixed(osf1));
             srif.setObs_scan_fixed(osfc);
 
@@ -419,7 +534,6 @@ public class ReceiverThread {
             at3.selectPrst(prst2);
 
             SenderThread.sendApdu(at3);
-
         } catch (Exception e) {
             System.out.println("Error: acceptedConfig");
             e.printStackTrace();
@@ -427,9 +541,7 @@ public class ReceiverThread {
     }
 
     public void associationResultAcceptedUnknownConfig(DataProto dataproto) {
-
         try {
-
             System.out.println("Accepted Unknown Config");
 
             /* Configuration Information Exchange */
@@ -558,16 +670,13 @@ public class ReceiverThread {
             at2.selectPrst(prst);
 
             SenderThread.sendApdu(at2);
-
         } catch (Exception e) {
             System.out.println("Error: associationResultAcceptedUnknownConfig");
             e.printStackTrace();
         }
-
     }
 
     public AttributeList setAttributeList(AttributeList alc) throws Exception {
-
         /* Initialize DataApdu -> EventReportArgumentSimple -> ConfigReport -> ConfigObjectList -> ConfigObject -> AttributeList */
         alc.initValue();
 
@@ -592,13 +701,11 @@ public class ReceiverThread {
         OID_Type oidtemp3 = new OID_Type();
         OID_Type oidtemp4 = new OID_Type();
 
-
         /* Byte Array NULL for Value Attributes */
         byte[] btmp1 = {(byte) 0, (byte) 2, (byte) 75, (byte) 92};
         byte[] btmp2 = {(byte) 240, (byte) 64};
         byte[] btmp3 = {(byte) 23, (byte) 160};
         byte[] btmp4 = {(byte) 0, (byte) 2, (byte) 0, (byte) 8, (byte) 10, (byte) 76, (byte) 0, (byte) 2, (byte) 9, (byte) 144, (byte) 0, (byte) 8};
-
 
         /* Add MDC_ATTR_ID_TYPE [2351] */
         oidtemp1.setValue(new INT_U16(Nomenclature.MDC_ATTR_ID_TYPE));
@@ -606,20 +713,17 @@ public class ReceiverThread {
         cavael1.setAttribute_value(btmp1);
         cavaelc.add(cavael1);
 
-
         /* Add MDC_ATTR_METRIC_SPEC_SMALL [2630] */
         oidtemp2.setValue(new INT_U16(Nomenclature.MDC_ATTR_METRIC_SPEC_SMALL));
         cavael2.setAttribute_id(oidtemp2);
         cavael2.setAttribute_value(btmp2);
         cavaelc.add(cavael2);
 
-
         /* Add MDC_ATTR_UNIT_CODE [2454] */
         oidtemp3.setValue(new INT_U16(Nomenclature.MDC_ATTR_UNIT_CODE));
         cavael3.setAttribute_id(oidtemp3);
         cavael3.setAttribute_value(btmp3);
         cavaelc.add(cavael3);
-
 
         /* Add MDC_ATTR_ATTRIBUTE_VAL_MAP [2645] */
         oidtemp4.setValue(new INT_U16(Nomenclature.MDC_ATTR_ATTRIBUTE_VAL_MAP));
@@ -632,9 +736,7 @@ public class ReceiverThread {
     }
 
     public void associateResultUnsupportedAssociationVersion(DataProto dataproto) {
-
         try {
-
             System.out.println("Unsupported Association Version");
 
             if (dataproto.getData_proto_id().getValue() == 0) {
@@ -652,7 +754,6 @@ public class ReceiverThread {
             System.out.println("Error: associateResultUnsupportedAssociationVersion");
             e.printStackTrace();
         }
-
     }
 
     public void associateResultRejectedUnauthorized() {
@@ -660,15 +761,11 @@ public class ReceiverThread {
     }
 
     public void associateResultRejectedUnknown() {
-
         System.out.println("Rejected Unknown");
-
     }
 
     public void associateResultRejectedNoCommonParameter(DataProto dataproto) {
-
         try {
-
             System.out.println("Rejected No Common Parameter");
 
             if (dataproto.getData_proto_id().getValue() == 0) {
@@ -689,9 +786,7 @@ public class ReceiverThread {
     }
 
     public void associateResultRejectedNoCommonProtocol(DataProto dataproto) {
-
         try {
-
             System.out.println("Rejected No Common Protocol");
 
             if (dataproto.getData_proto_id().getValue() == 0) {
@@ -720,11 +815,8 @@ public class ReceiverThread {
     }
 
     public void associateResultAccepted() {
-
         try {
-
             acceptedConfig();
-
         } catch (Exception e) {
             System.out.println("Error: associateResultAccepted");
             e.printStackTrace();
@@ -732,8 +824,9 @@ public class ReceiverThread {
     }
 
     public void createAssociationRequest(int type, String host, int port, int[] esid) {
-
         try {
+            this.type = type;
+            this.esid = esid;
 
             /* TEST ApduType choice */
             /* Make ApduType */
@@ -805,7 +898,6 @@ public class ReceiverThread {
             /* Make PhdAssociationInformation -> ConfigId  Thermometer Range Value Std[800] Ext[16386,32767]*/
             ConfigId cid = new ConfigId(type);
 
-
             /* Make PhdAssociationInformation -> DataReqModeCapab */
             DataReqModeCapab drmc = new DataReqModeCapab();
 
@@ -860,10 +952,8 @@ public class ReceiverThread {
             /* Add ArqApdu to ApduType -> AarqApdu */
             at.selectAarq(aarq);
 
-
             System.out.println("Connecting to Server...");
             socket = new Socket(host, port);
-
 
             (new SenderThread(socket)).start();
             Thread.sleep(100);
@@ -871,13 +961,10 @@ public class ReceiverThread {
 
             Thread.sleep(1000);
             receive();
-
         } catch (Exception e) {
             System.out.println("Error: createAssociationRequest");
             e.printStackTrace();
         }
-
-
     }
 
     public void receive() {
@@ -888,8 +975,6 @@ public class ReceiverThread {
                 ApduType rapdu = decoder.decode(socket.getInputStream(), ApduType.class);
                 evalueResponse(rapdu);
             }
-
-
         } catch (Exception e) {
             System.out.println("Disconnected");
             /*e.printStackTrace()*/
@@ -903,8 +988,7 @@ public class ReceiverThread {
         (byte) 'c', (byte) 'd', (byte) 'e', (byte) 'f'
     };
 
-    public static String getHexString(byte[] raw)
-            throws UnsupportedEncodingException {
+    public static String getHexString(byte[] raw) throws UnsupportedEncodingException {
         byte[] hex = new byte[2 * raw.length];
         int index = 0;
 
@@ -913,6 +997,7 @@ public class ReceiverThread {
             hex[index++] = HEX_CHAR_TABLE[v >>> 4];
             hex[index++] = HEX_CHAR_TABLE[v & 0xF];
         }
+
         return new String(hex, "ASCII");
     }
 
@@ -928,11 +1013,14 @@ public class ReceiverThread {
                     cursor += 1;
                 }
             }
+
             if ((cursor % 2) > 0) {
                 intValue += 128;
             }
+
             buffer.append(Integer.toHexString(intValue) + " ");
         }
+
         return buffer.toString();
     }
 }
