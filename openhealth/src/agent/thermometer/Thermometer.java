@@ -1,5 +1,6 @@
 package agent.thermometer;
 
+import es.libresoft.openhealth.chap.AgentAuthenticator;
 import ieee_11073.part_20601.asn1.*;
 import java.util.Calendar;
 
@@ -19,12 +20,10 @@ public class Thermometer {
     }
 
     private static int generateSimpleNuObservedValueInteger() {
-
         return 36 + (int) (Math.random() * 4);
     }
 
     public static ObservationScanFixed createObservationScanFixed(ObservationScanFixed osf1) throws Exception {
-
         byte[] osfval;
         osfval = new byte[11];
         AbsoluteTime at = generateAbsoluteTime();
@@ -46,7 +45,6 @@ public class Thermometer {
         osf1.setObj_handle(handle);
         osf1.setObs_val_data(osfval);
         return osf1;
-
     }
 
     private static boolean validateNumber(String number) {
@@ -73,7 +71,6 @@ public class Thermometer {
     }
 
     private static boolean validateType(String arg) {
-
         if (validateNumber(arg)) {
             if (Integer.parseInt(arg) == 800 || Integer.parseInt(arg) == 16386) {
                 return true;
@@ -83,11 +80,9 @@ public class Thermometer {
         } else {
             return false;
         }
-
     }
 
     private static int[] idType(int type) {
-
         int[] value;
         value = new int[3];
 
@@ -100,17 +95,14 @@ public class Thermometer {
             value[1] = 88;
             value[2] = 84;
         }
+        
         return value;
-
     }
 
     @SuppressWarnings("unchecked")
     public static void main(String[] args) {
-
-
         try {
-
-            if (args.length < 3) {
+            if (args.length < 4) {
                 System.out.println("Thermometer Agent need arguments: <Thermometer Type> <Manager IP> <Manager Port>");
 
             } else {
@@ -120,7 +112,9 @@ public class Thermometer {
                             int type = Integer.parseInt(args[0]);
                             String host = args[1];
                             int port = Integer.parseInt(args[2]);
-                            ReceiverThread receiver = new ReceiverThread();
+                            byte[] key = args[3].getBytes();
+                            AgentAuthenticator authenticator = new AgentAuthenticator(key);
+                            ReceiverThread receiver = new ReceiverThread(authenticator);
                             receiver.createAssociationRequest(type, host, port, idType(type));
                         } else {
                             System.out.println("You must be to write a valid TCP port");
@@ -139,9 +133,7 @@ public class Thermometer {
     }
 
     public static void getErrorResult(int errorresult) {
-
         try {
-
             System.out.println("Error Result");
 
             if (errorresult == 1) {
@@ -172,6 +164,5 @@ public class Thermometer {
             System.out.println("Error: getErrorResult");
             e.printStackTrace();
         }
-
     }
 }

@@ -23,12 +23,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 package ieee_11073.part_20601.fsm;
 
+import es.libresoft.openhealth.chap.ManagerAuthenticator;
 import ieee_11073.part_20601.asn1.ApduType;
 import ieee_11073.part_20601.phd.dim.MDS;
 
 public interface StateHandler {
 	void changeState(State newState);
 	void send(ApduType apdu);
+        ManagerAuthenticator getAuthenticator();
 	MDS getMDS();
 	void setMDS(MDS mds);
 }
