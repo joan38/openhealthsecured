@@ -32,16 +32,20 @@ import es.libresoft.openhealth.events.EventType;
 import es.libresoft.openhealth.messages.MessageFactory;
 import es.libresoft.openhealth.utils.ASN1_Tools;
 import es.libresoft.openhealth.utils.ASN1_Values;
+import ieee_11073.part_10101.Nomenclature;
 import ieee_11073.part_104zz.manager.DS_Extended;
 import ieee_11073.part_104zz.manager.DeviceSpecializationFactory;
+import ieee_11073.part_20601.asn1.AVA_Type;
 import ieee_11073.part_20601.asn1.AarqApdu;
 import ieee_11073.part_20601.asn1.ApduType;
+import ieee_11073.part_20601.asn1.AttributeList;
 import ieee_11073.part_20601.asn1.DataProto;
 import ieee_11073.part_20601.asn1.DataProtoList;
 import ieee_11073.part_20601.asn1.DataReqModeCapab;
 import ieee_11073.part_20601.asn1.PhdAssociationInformation;
 import ieee_11073.part_20601.fsm.StateHandler;
 import ieee_11073.part_20601.fsm.Unassociated;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.Random;
 
@@ -59,7 +63,7 @@ public final class MUnassociated extends Unassociated {
     public synchronized void process(ApduType apdu) {
         if (apdu.isAarqSelected()) {
             /**
-             * TODO: Authentication verification here
+             * Authentication verification here
              */
             if (challenge == null) {
                 // Reject and send the challenge in the same time
@@ -72,39 +76,41 @@ public final class MUnassociated extends Unassociated {
                 System.out.println("Authenticating the agent");
                 DataProtoList dpl = apdu.getAarq().getData_proto_list();
                 Iterator<DataProto> i = dpl.getValue().iterator();
-                byte[] systemId = null;
-                byte[] challengeResponse = null;
 
                 while (i.hasNext()) {
                     DataProto dp = i.next();
                     switch (dp.getData_proto_id().getValue()) {
                         case ASN1_Values.DATA_PROTO_ID_20601:
                             try {
-                                systemId = ASN1_Tools.decodeData(dp.getData_proto_info(), PhdAssociationInformation.class, Device.MDER_DEFUALT).getSystem_id();
+                                PhdAssociationInformation associationInformation = ASN1_Tools.decodeData(dp.getData_proto_info(), PhdAssociationInformation.class, Device.MDER_DEFUALT);
+                                byte[] systemId = associationInformation.getSystem_id();
+                                
+                                Collection<AVA_Type> optionList = associationInformation.getOption_list().getValue();
+                                byte[] challengeResponse = null;
+                                for (AVA_Type avaType : optionList) {
+                                    if (avaType.getAttribute_id().getValue().getValue() == Nomenclature.MDC_ATTR_ID_AUTH) {
+                                        challengeResponse = avaType.getAttribute_value();
+                                    }
+                                }
+                                if (challengeResponse == null) {
+                                    state_handler.send(MessageFactory.AareRejectApdu_NO_COMMON_PROTOCOL());
+                                    return;
+                                }
+
+                                if (state_handler.getAuthenticator().authenticateAgent(systemId, challengeResponse, challenge)) {
+                                    // OK
+                                    System.out.println("Agent authenticated");
+                                    associating(apdu.getAarq());
+                                } else {
+                                    // Reject permanent
+                                    System.out.println("Rejected for wrong authentication");
+                                    state_handler.send(MessageFactory.AareRejectApdu_UNAUTHORIZED());
+                                }
                             } catch (Exception ex) {
                                 state_handler.send(MessageFactory.AareRejectApdu_NO_COMMON_PROTOCOL());
                             }
                             break;
-                        case ASN1_Values.DATA_PROTO_ID_EXTERNAL:
-                            challengeResponse = dp.getData_proto_info();
-                            break;
                     }
-                }
-
-                if (systemId == null || challengeResponse == null) {
-                    /* Reject because there is not common data protocol found in DataProtoList sent from the agent */
-                    state_handler.send(MessageFactory.AareRejectApdu_NO_COMMON_PROTOCOL());
-                    return;
-                }
-
-                if (state_handler.getAuthenticator().authenticateAgent(systemId, challengeResponse, challenge)) {
-                    // OK
-                    System.out.println("Agent authenticated");
-                    associating(apdu.getAarq());
-                } else {
-                    // Reject permanent
-                    System.out.println("Rejected for wrong authentication");
-                    state_handler.send(MessageFactory.AareRejectApdu_UNAUTHORIZED());
                 }
             }
         } else if (apdu.isAareSelected() || apdu.isRlrqSelected() || apdu.isPrstSelected()) {

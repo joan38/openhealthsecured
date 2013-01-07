@@ -65,6 +65,7 @@ public interface Nomenclature {
     public final int MDC_ATTR_ID_PHYSIO					=	2347;	/*                               */
     public final int MDC_ATTR_ID_PROD_SPECN				=	2349;	/*                               */         
     public final int MDC_ATTR_ID_TYPE					=	2351;	/*                               */
+    public final int MDC_ATTR_ID_AUTH					=	2352;	/*                               */
     public final int MDC_ATTR_METRIC_STORE_CAPAC_CNT	=	2369;	/*                               */
     public final int MDC_ATTR_METRIC_STORE_SAMPLE_ALG 	=	2371;	/*                               */
     public final int MDC_ATTR_METRIC_STORE_USAGE_CNT 	=	2372;	/*                               */
