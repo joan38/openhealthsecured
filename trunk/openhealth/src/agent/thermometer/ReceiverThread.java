@@ -247,6 +247,15 @@ public class ReceiverThread {
             /* Set PhdAssociationInformation -> AttributeList */
             al.initValue();
 
+            /* ChallengeResponse */
+            AVA_Type avaType = new AVA_Type();
+            avaType.initWithDefaults();
+            OID_Type oidType = new OID_Type();
+            oidType.setValue(new INT_U16(Nomenclature.MDC_ATTR_ID_AUTH));
+            avaType.setAttribute_id(oidType);
+            avaType.setAttribute_value(challengeResponse);
+            al.add(avaType);
+
             /* Set PhdAssociationInformation  */
             pai.setProtocol_version(pv);
             pai.setEncoding_rules(er);
@@ -273,12 +282,7 @@ public class ReceiverThread {
             dp.setData_proto_info(out.toByteArray()); //Get bytes for PhdAssociationInformation
 			/* Add DataProto to ApduType -> AarqApdu -> DataProtoList */
             dpl.add(dp);
-            
-            DataProto dpChallenge = new DataProto();
-            dpChallenge.setData_proto_id(new DataProtoId(ASN1_Values.DATA_PROTO_ID_EXTERNAL));
-            dpChallenge.setData_proto_info(challengeResponse);
-            dpl.add(dpChallenge);
-            
+
             /* Add AssociationVersion to ApduType -> AarqApdu -> AssociationVersion*/
             aarq.setAssoc_version(av);
             /* Add DataProtoList to ApduType -> AarqApdu ->DataProtoList */

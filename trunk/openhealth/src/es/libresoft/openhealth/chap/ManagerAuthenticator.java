@@ -17,12 +17,12 @@ public class ManagerAuthenticator {
 
     private HashMap<String, byte[]> agents = new HashMap<String, byte[]>();
 
-    public void addAgent(byte[] macAddress, byte[] key) {
-        agents.put(new String(macAddress), key);
+    public void addAgent(byte[] systemId, byte[] key) {
+        agents.put(new String(systemId), key);
     }
 
     public void removeAgent(byte[] systemId) {
-        agents.remove(systemId.toString());
+        agents.remove(new String(systemId));
     }
 
     /**
